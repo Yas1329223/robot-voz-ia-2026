@@ -1,0 +1,33 @@
+# Modelos entrenados (archivos grandes)
+*.pkl
+*.h5
+*.pt
+*.onnx
+*.tflite
+
+# Audios del dataset (archivos grandes - graba localmente)
+dataset/**/*.wav
+dataset/**/*.ogg
+dataset/**/*.mp3
+dataset/**/*.m4a
+dataset/**/*.flac
+dataset/**/*.opus
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
