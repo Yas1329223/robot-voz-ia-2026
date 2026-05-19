@@ -1,0 +1,10 @@
+numpy
+librosa
+joblib
+scikit-learn
+sounddevice
+scipy
+flask
+requests
+soundfile
+audioread
