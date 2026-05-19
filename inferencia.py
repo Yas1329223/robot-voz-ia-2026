@@ -30,8 +30,9 @@ GRIS     = "\033[90m"
 BOLD     = "\033[1m"
 RESET    = "\033[0m"
 
+
 # ── Configuracion ─────────────────────────────────────────────────────────────
-ESP32_IP    = "10.202.168.49"
+ESP32_IP    = "192.168.0.32"
 ESP32_URL   = f"http://{ESP32_IP}/cmd"
 SAMPLE_RATE = 16000
 DURACION    = 1.5    # debe coincidir con modelo_voz.py
@@ -83,24 +84,41 @@ _HTML = """<!DOCTYPE html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:sans-serif;background:#0a0a0a;color:#fff;min-height:100vh;padding:20px 16px}
 h1{text-align:center;font-size:24px;font-weight:800;color:#27a058;padding:18px 0 4px}
-.sub{text-align:center;font-size:12px;color:#444;font-family:monospace;margin-bottom:24px}
-.card{background:#111;border:1px solid #1a3a2a;border-radius:16px;padding:24px;max-width:480px;margin:0 auto 20px;text-align:center}
-.big-word{font-size:52px;font-weight:900;color:#27a058;letter-spacing:3px;min-height:68px;transition:color .2s}
-.big-word.dim{color:#222}
-.big-word.warn{color:#e08800}
-.conf-track{margin:14px 0 10px;height:10px;background:#1a1a1a;border-radius:5px;overflow:hidden}
-.conf-fill{height:100%;border-radius:5px;transition:width .25s,background .25s}
-.conf-fill.hi{background:#27a058}
-.conf-fill.mid{background:#e08800}
-.conf-fill.lo{background:#e04040}
-.cmd-label{font-size:13px;font-family:monospace;color:#444;min-height:20px}
-.cmd-label b{color:#27a058}
+.sub{text-align:center;font-size:12px;color:#444;font-family:monospace;margin-bottom:20px}
 .dot-row{text-align:center;margin-bottom:16px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#27a058;margin-right:7px;animation:blink 1.4s infinite}
 .dot-txt{font-size:13px;color:#27a058}
 .dot-txt.err{color:#e04040}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
-.log{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:5px;max-height:320px;overflow-y:auto}
+
+/* Tarjeta palabra actual */
+.card{background:#111;border:1px solid #1a3a2a;border-radius:16px;padding:20px 24px;max-width:480px;margin:0 auto 20px;text-align:center}
+.big-word{font-size:48px;font-weight:900;color:#27a058;letter-spacing:3px;min-height:62px;transition:color .2s}
+.big-word.dim{color:#222}
+.big-word.warn{color:#e08800}
+.conf-track{margin:12px 0 8px;height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden}
+.conf-fill{height:100%;border-radius:4px;transition:width .25s,background .25s}
+.conf-fill.hi{background:#27a058}
+.conf-fill.mid{background:#e08800}
+.conf-fill.lo{background:#e04040}
+.cmd-label{font-size:13px;font-family:monospace;color:#444;min-height:18px}
+.cmd-label b{color:#27a058}
+
+/* Transcripcion fluida */
+.transcript-box{max-width:480px;margin:0 auto 20px;background:#0f0f0f;border:1px solid #1a1a1a;border-radius:16px;padding:18px 20px;min-height:90px}
+.transcript-title{font-size:11px;color:#333;font-family:monospace;margin-bottom:10px;letter-spacing:1px}
+.transcript-text{font-size:22px;font-weight:600;line-height:1.7;word-wrap:break-word}
+.transcript-text .palabra{display:inline;margin-right:8px;transition:color 1.5s}
+.transcript-text .nueva{color:#27a058}
+.transcript-text .reciente{color:#ccc}
+.transcript-text .vieja{color:#333}
+.transcript-text .ignorada{color:#222;font-size:16px}
+.transcript-text .ruido-t{color:#1e1e1e;font-size:14px}
+.cursor{display:inline-block;width:2px;height:22px;background:#27a058;margin-left:2px;vertical-align:middle;animation:cursor .9s infinite}
+@keyframes cursor{0%,100%{opacity:1}50%{opacity:0}}
+
+/* Historial */
+.log{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto}
 .row{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#111;border:1px solid #161616;border-radius:8px;font-size:12px;animation:pop .25s}
 @keyframes pop{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
 .rt{color:#2a2a2a;font-family:monospace;font-size:11px;min-width:52px}
@@ -119,19 +137,59 @@ h1{text-align:center;font-size:24px;font-weight:800;color:#27a058;padding:18px 0
   <span class="dot"></span>
   <span class="dot-txt" id="stxt">Conectado &mdash; escuchando...</span>
 </div>
+
 <div class="card">
   <div class="big-word dim" id="bw">&mdash;</div>
   <div class="conf-track"><div class="conf-fill" id="cf" style="width:0%"></div></div>
   <div class="cmd-label" id="cl">esperando...</div>
 </div>
+
+<div class="transcript-box">
+  <div class="transcript-title">TRANSCRIPCION EN VIVO</div>
+  <div class="transcript-text" id="transcript"><span class="cursor"></span></div>
+</div>
+<div id="sr-warn" style="display:none;text-align:center;font-size:12px;color:#e04040;margin-bottom:10px">Tu browser no soporta reconocimiento de voz</div>
+
 <div class="log" id="log"></div>
+
 <script>
 const EM={adelante:'⬆',atras:'⬇',izquierda:'⬅',derecha:'➡',detener:'⛔',curva_izq:'↩',curva_der:'↪',ruido:'~'};
 const es=new EventSource('/events');
+
+// ── Web Speech API — transcripcion real de todo lo que se dice ──
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let srFinal='';
+if(SR){
+  const recog=new SR();
+  recog.lang='es-GT';
+  recog.continuous=true;
+  recog.interimResults=true;
+  recog.onresult=ev=>{
+    let interim='';
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      if(ev.results[i].isFinal) srFinal+=ev.results[i][0].transcript+' ';
+      else interim+=ev.results[i][0].transcript;
+    }
+    // mantener solo las ultimas ~200 chars del texto final
+    if(srFinal.length>200) srFinal=srFinal.slice(-200);
+    const box=document.getElementById('transcript');
+    box.innerHTML='<span class="vieja">'+srFinal+'</span>'
+      +'<span class="nueva">'+interim+'</span>'
+      +'<span class="cursor"></span>';
+    box.scrollTop=box.scrollHeight;
+  };
+  recog.onend=()=>{try{recog.start();}catch(e){}};
+  recog.start();
+} else {
+  document.getElementById('sr-warn').style.display='block';
+}
+
 es.onmessage=e=>{
   const d=JSON.parse(e.data);
   if(d.tipo==='ping')return;
   const pct=Math.round(d.conf*100);
+
+  // Tarjeta principal
   const bw=document.getElementById('bw');
   const cf=document.getElementById('cf');
   const cl=document.getElementById('cl');
@@ -140,6 +198,9 @@ es.onmessage=e=>{
   cf.style.width=pct+'%';
   cf.className='conf-fill '+(d.conf>=0.7?'hi':d.conf>=0.5?'mid':'lo');
   cl.innerHTML=d.cmd?'&rarr; <b>'+d.cmd+'</b>':'<span style="color:#2a2a2a">ignorado ('+pct+'%)</span>';
+
+
+  // Historial
   const log=document.getElementById('log');
   const r=document.createElement('div');
   r.className='row';

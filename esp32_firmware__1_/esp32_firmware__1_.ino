@@ -4,8 +4,8 @@
 #include "protocol.h"
 #include "web_page.h"
 
-const char* WIFI_SSID = "URL-WIFI";
-const char* WIFI_PASS = "";
+const char* WIFI_SSID = "TIGO-0335 Ex2";
+const char* WIFI_PASS = "4G79ED807884";
 
 WebServer server(80);
 

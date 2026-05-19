@@ -195,14 +195,59 @@ def entrenar():
 
     # Metricas finales sobre conjunto de prueba
     y_pred = modelo_final.predict(X_test)
-    print("\n  REPORTE DE METRICAS (conjunto de prueba 10%):")
-    print("-" * 55)
-    print(classification_report(y_test, y_pred, target_names=clases))
-    print("  MATRIZ DE CONFUSION:")
-    print("-" * 55)
+
+    # Colores ANSI
+    VERDE    = "\033[92m"
+    ROJO     = "\033[91m"
+    AMARILLO = "\033[93m"
+    CYAN     = "\033[96m"
+    GRIS     = "\033[90m"
+    BOLD     = "\033[1m"
+    RESET    = "\033[0m"
+    os.system('')
+
+    print(f"\n  {BOLD}REPORTE DE METRICAS (conjunto de prueba 10%):{RESET}")
+    print(f"  {GRIS}{'-'*55}{RESET}")
+    report = classification_report(y_test, y_pred, target_names=clases, output_dict=True)
+    print(f"  {'Clase':<14} {'Precision':>10} {'Recall':>8} {'F1':>8} {'N':>6}")
+    print(f"  {GRIS}{'-'*50}{RESET}")
+    for cls in clases:
+        r = report[cls]
+        f1 = r['f1-score']
+        color = VERDE if f1 >= 0.95 else (AMARILLO if f1 >= 0.80 else ROJO)
+        print(f"  {color}{cls:<14}{RESET}"
+              f"  {r['precision']*100:>8.1f}%"
+              f"  {r['recall']*100:>6.1f}%"
+              f"  {color}{f1*100:>6.1f}%{RESET}"
+              f"  {int(r['support']):>5}")
+
+    # Matriz de confusion bonita
     cm = confusion_matrix(y_test, y_pred)
-    print("  Clases:", list(clases))
-    print(cm)
+    abrev = [c[:6] for c in clases]
+    col_w = 7
+    print(f"\n  {BOLD}MATRIZ DE CONFUSION:{RESET}")
+    print(f"  {GRIS}{'-'*55}{RESET}")
+    # Encabezado columnas
+    header = "  " + " " * 8
+    for a in abrev:
+        header += f"{a:>{col_w}}"
+    print(f"{GRIS}{header}{RESET}")
+    # Filas
+    for i, row in enumerate(cm):
+        linea = f"  {CYAN}{abrev[i]:<8}{RESET}"
+        for j, val in enumerate(row):
+            if i == j:
+                color = VERDE if val > 0 else GRIS
+            else:
+                color = ROJO if val > 0 else GRIS
+            linea += f"{color}{val:>{col_w}}{RESET}"
+        total = row.sum()
+        ok    = cm[i, i]
+        pct   = ok / total * 100 if total > 0 else 0
+        pcolor = VERDE if pct >= 95 else (AMARILLO if pct >= 80 else ROJO)
+        linea += f"  {pcolor}{pct:5.1f}%{RESET}"
+        print(linea)
+    print(f"  {GRIS}(verde=correcto, rojo=error){RESET}")
 
     # Validacion cruzada 6-fold
     print("\n  Validacion cruzada estratificada (6-fold)...")
