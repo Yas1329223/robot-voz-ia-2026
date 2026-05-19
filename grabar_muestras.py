@@ -22,6 +22,7 @@ RESET    = "\033[0m"
 
 SAMPLE_RATE  = 16000
 DURACION     = 1.5
+DURACION_CURVA = 2.0
 DATASET_DIR  = "dataset"
 N_POR_SESION = 30
 
@@ -47,8 +48,8 @@ def tiene_voz(audio):
     rms = np.sqrt(np.mean(audio ** 2))
     return 20 * np.log10(rms + 1e-10) > -35
 
-def grabar():
-    audio = sd.rec(int(DURACION * SAMPLE_RATE), samplerate=SAMPLE_RATE,
+def grabar(duracion):
+    audio = sd.rec(int(duracion * SAMPLE_RATE), samplerate=SAMPLE_RATE,
                    channels=1, dtype='float32')
     sd.wait()
     return audio.flatten()
@@ -82,12 +83,13 @@ def main():
 
     clase = nombres[int(op) - 1]
     instruccion = CLASES[clase]
+    duracion = DURACION_CURVA if clase in ("curva_izq", "curva_der") else DURACION
 
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"\n  {BOLD}Clase: {VERDE}{clase.upper()}{RESET}\n")
     print(f"  {instruccion}\n")
-    print(f"  Se grabaran {CYAN}{N_POR_SESION}{RESET} muestras de {CYAN}{DURACION}s{RESET} cada una.")
-    print(f"  Habla {BOLD}apenas aparezca GRABANDO{RESET} — tienes {DURACION}s.\n")
+    print(f"  Se grabaran {CYAN}{N_POR_SESION}{RESET} muestras de {CYAN}{duracion}s{RESET} cada una.")
+    print(f"  Habla {BOLD}apenas aparezca GRABANDO{RESET} — tienes {duracion}s.\n")
     input(f"  {GRIS}Presiona ENTER cuando estes listo...{RESET}")
     print()
 
@@ -101,7 +103,7 @@ def main():
             time.sleep(0.6)
 
         print(f"\r  {BOLD}{VERDE}>>> GRABANDO <<<   muestra {i+1}/{N_POR_SESION}{RESET}   ", end="", flush=True)
-        audio = grabar()
+        audio = grabar(duracion)
 
         if clase != "ruido" and not tiene_voz(audio):
             print(f"\r  {ROJO}✗ No se detecto voz — se repite{RESET}                    ")
