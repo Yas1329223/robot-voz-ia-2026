@@ -1,8 +1,7 @@
 
 """
 =============================================================
- SISTEMA DE RECONOCIMIENTO DE VOZ — PROYECTO FINAL IA 2026
- Universidad Rafael Landívar
+ SISTEMA DE RECONOCIMIENTO DE VOZ
 =============================================================
 Division: 70% entrenamiento | 20% validacion | 10% prueba
 """
