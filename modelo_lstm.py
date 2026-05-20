@@ -5,8 +5,6 @@
 Modelo avanzado: LSTM entrenada sobre secuencias MFCC temporales.
 Comparado cuantitativamente contra el modelo base (SVM/MLP).
 
-USO:
-  python modelo_lstm.py
 """
 
 import os, sys, time, warnings
@@ -23,7 +21,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 warnings.filterwarnings('ignore')
 os.system('')
 
-# ── Colores ───────────────────────────────────────────────────────────────────
+#  Colores 
 VERDE    = "\033[92m"
 ROJO     = "\033[91m"
 AMARILLO = "\033[93m"
@@ -32,7 +30,7 @@ GRIS     = "\033[90m"
 BOLD     = "\033[1m"
 RESET    = "\033[0m"
 
-# ── Configuracion ─────────────────────────────────────────────────────────────
+#  Configuracion 
 DATASET_DIR = "dataset"
 SAMPLE_RATE = 16000
 DURATION    = 1.5
@@ -40,13 +38,13 @@ N_MFCC      = 13
 HOP_LENGTH  = 160
 N_FFT       = 512
 EPOCHS      = 80
-BATCH_SIZE  = 32
-LR          = 0.001
+BATCH_SIZE  = 32 # 32 Audios a la vez
+LR          = 0.001 #Aprendizaje inicial
 PATIENCE    = 15
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ── Arquitectura LSTM (PyTorch) ───────────────────────────────────────────────
+# Arquitectura LSTM 
 class LSTMVoz(nn.Module):
     """
     Input:  (batch, timesteps, N_MFCC)
@@ -60,16 +58,16 @@ class LSTMVoz(nn.Module):
     """
     def __init__(self, input_size, hidden1, hidden2, n_clases, dropout=0.3):
         super().__init__()
-        self.lstm1   = nn.LSTM(input_size, hidden1, batch_first=True)
-        self.drop1   = nn.Dropout(dropout)
-        self.lstm2   = nn.LSTM(hidden1, hidden2, batch_first=True)
-        self.drop2   = nn.Dropout(dropout)
-        self.fc1     = nn.Linear(hidden2, 64)
+        self.lstm1   = nn.LSTM(input_size, hidden1, batch_first=True) #1. 128 
+        self.drop1   = nn.Dropout(dropout) #2. 30% de las neuronas se apagan aleatoriamente para evitar sobreajuste
+        self.lstm2   = nn.LSTM(hidden1, hidden2, batch_first=True) #3. 64 
+        self.drop2   = nn.Dropout(dropout) 
+        self.fc1     = nn.Linear(hidden2, 64) #
         self.relu    = nn.ReLU()
         self.fc2     = nn.Linear(64, n_clases)
 
     def forward(self, x):
-        out, _ = self.lstm1(x)          # (batch, timesteps, hidden1)
+        out, _ = self.lstm1(x)         
         out     = self.drop1(out)
         out, _  = self.lstm2(out)        # (batch, timesteps, hidden2)
         out     = out[:, -1, :]          # último timestep
@@ -77,7 +75,7 @@ class LSTMVoz(nn.Module):
         out     = self.relu(self.fc1(out))
         return self.fc2(out)
 
-# ── Augmentacion ──────────────────────────────────────────────────────────────
+#  Augmentacion 
 def augmentar(audio):
     n = int(SAMPLE_RATE * DURATION)
     versiones = [audio,
@@ -95,18 +93,18 @@ def augmentar(audio):
         pass
     return versiones
 
-# ── Extraccion de secuencia MFCC ──────────────────────────────────────────────
+#  Extraccion de secuencia MFCC 
 def mfcc_seq(audio):
     mfcc = librosa.feature.mfcc(y=audio, sr=SAMPLE_RATE,
                                   n_mfcc=N_MFCC, n_fft=N_FFT, hop_length=HOP_LENGTH)
     return mfcc.T   # (timesteps, N_MFCC)
 
-# ── Carga de dataset ──────────────────────────────────────────────────────────
+#  Carga de dataset 
 def cargar_dataset():
     X, y = [], []
     n    = int(SAMPLE_RATE * DURATION)
     print(f"\n  {BOLD}Cargando dataset para LSTM...{RESET}")
-    print(f"  {GRIS}{'─'*55}{RESET}")
+    print(f"  {GRIS}{''*55}{RESET}")
 
     clases = sorted([d for d in os.listdir(DATASET_DIR)
                      if os.path.isdir(os.path.join(DATASET_DIR, d))])
@@ -135,16 +133,16 @@ def cargar_dataset():
                 pass
         print(f"  {CYAN}{clase:<15}{RESET} {count:>4} secuencias")
 
-    print(f"  {GRIS}{'─'*55}{RESET}")
+    print(f"  {GRIS}{''*55}{RESET}")
     print(f"  TOTAL: {VERDE}{len(X)}{RESET} secuencias, {len(clases)} clases\n")
     return np.array(X, dtype=np.float32), np.array(y)
 
-# ── Matriz de confusion bonita ────────────────────────────────────────────────
+#  Matriz de confusion bonita 
 def imprimir_matriz(cm, clases):
     abrev = [c[:6] for c in clases]
     w     = 7
     print(f"\n  {BOLD}MATRIZ DE CONFUSION — LSTM:{RESET}")
-    print(f"  {GRIS}{'─'*55}{RESET}")
+    print(f"  {GRIS}{''*55}{RESET}")
     hdr = "  " + " " * 8 + "".join(f"{a:>{w}}" for a in abrev)
     print(f"{GRIS}{hdr}{RESET}")
     for i, row in enumerate(cm):
@@ -159,7 +157,7 @@ def imprimir_matriz(cm, clases):
         print(lin)
     print(f"  {GRIS}(verde=correcto  rojo=error){RESET}")
 
-# ── Entrenamiento ─────────────────────────────────────────────────────────────
+#  Entrenamiento 
 def entrenar():
     print(f"\n{BOLD}{VERDE}")
     print("  ╔══════════════════════════════════════════════════════╗")
@@ -216,7 +214,7 @@ def entrenar():
     t0         = time.time()
 
     print(f"  {'Epoch':>5}  {'Loss Train':>11}  {'Acc Val':>8}")
-    print(f"  {GRIS}{'─'*30}{RESET}")
+    print(f"  {GRIS}{''*30}{RESET}")
 
     for epoch in range(1, EPOCHS + 1):
         # Train
@@ -288,12 +286,12 @@ def entrenar():
         # (usamos accuracy del reporte ya guardado)
 
     print(f"\n  {BOLD}COMPARACION DE MODELOS:{RESET}")
-    print(f"  {GRIS}{'─'*48}{RESET}")
+    print(f"  {GRIS}{''*48}{RESET}")
     print(f"  {'Modelo':<22} {'Prueba':>10}  {'Ventaja'}")
-    print(f"  {GRIS}{'─'*48}{RESET}")
+    print(f"  {GRIS}{''*48}{RESET}")
     print(f"  {'MLP/SVM (Base)':<22} {GRIS}{'~97.2%':>10}{RESET}  estadísticas MFCC")
     print(f"  {'LSTM (Avanzado)':<22} {VERDE}{test_acc*100:>9.1f}%{RESET}  secuencias temporales")
-    print(f"  {GRIS}{'─'*48}{RESET}")
+    print(f"  {GRIS}{''*48}{RESET}")
     print(f"\n  {GRIS}El LSTM analiza la evolución temporal de los MFCCs")
     print(f"  frame a frame ({ts} timesteps), no solo mean/std.")
     print(f"  Esto le permite detectar comandos compuestos y")
