@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 
 os.system('')  # habilitar ANSI en Windows 10+
 
-# ── Colores ───────────────────────────────────────────────────────────────────
+#  Colores 
 VERDE    = "\033[92m"
 ROJO     = "\033[91m"
 AMARILLO = "\033[93m"
@@ -32,7 +32,7 @@ BOLD     = "\033[1m"
 RESET    = "\033[0m"
 
 
-# ── Configuracion ─────────────────────────────────────────────────────────────
+#  Configuracion 
 ESP32_IP    = "192.168.0.32"
 ESP32_URL   = f"http://{ESP32_IP}/cmd"
 SAMPLE_RATE = 16000
@@ -63,7 +63,7 @@ EMOJIS = {
     "ruido":     "~",
 }
 
-# ── Comandos compuestos (Módulo Secuencial LSTM) ───────────────────────────────
+#  Comandos compuestos (Módulo Secuencial LSTM) 
 # Detecta secuencias de 2 palabras y ejecuta acción compuesta
 COMPUESTOS = {
     ("adelante",  "detener"):   ("RECTA_10S",   "STOP",        "AVANZA Y PARA"),
@@ -97,7 +97,7 @@ def detectar_compuesto(clase, conf):
             return cmd1, cmd2, etiqueta
     return None, None, None
 
-# ── Cola SSE ──────────────────────────────────────────────────────────────────
+#  Cola SSE 
 _sse: queue.Queue = queue.Queue(maxsize=60)
 
 def _push(tipo, **kw):
@@ -108,7 +108,7 @@ def _push(tipo, **kw):
     except queue.Full:
         pass
 
-# ── HTML embebido ─────────────────────────────────────────────────────────────
+#  HTML embebido 
 _HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -191,7 +191,7 @@ h1{text-align:center;font-size:24px;font-weight:800;color:#27a058;padding:18px 0
 const EM={adelante:'⬆',atras:'⬇',izquierda:'⬅',derecha:'➡',detener:'⛔',curva_izq:'↩',curva_der:'↪',ruido:'~'};
 const es=new EventSource('/events');
 
-// ── Web Speech API — transcripcion real de todo lo que se dice ──
+//  Web Speech API — transcripcion real de todo lo que se dice 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let srFinal='';
 if(SR){
@@ -263,7 +263,7 @@ es.onopen=()=>{
 </body>
 </html>"""
 
-# ── Flask server ──────────────────────────────────────────────────────────────
+#  Flask server 
 def _flask_thread():
     try:
         from flask import Flask, Response
@@ -294,7 +294,7 @@ def _flask_thread():
     except Exception:
         pass
 
-# ── Arquitectura LSTM (debe coincidir con modelo_lstm.py) ────────────────────
+#  Arquitectura LSTM (debe coincidir con modelo_lstm.py) 
 class LSTMVoz(nn.Module):
     def __init__(self, input_size, hidden1, hidden2, n_clases, dropout=0.3):
         super().__init__()
@@ -314,7 +314,7 @@ class LSTMVoz(nn.Module):
         out    = self.drop2(out)
         return self.fc2(self.relu(self.fc1(out)))
 
-# ── Extraccion de features ────────────────────────────────────────────────────
+#  Extraccion de features 
 def _normalizar_audio(audio):
     if np.max(np.abs(audio)) > 0:
         audio = audio / np.max(np.abs(audio))
@@ -336,7 +336,7 @@ def extraer_mfcc_seq(audio):
                                   n_mfcc=N_MFCC, n_fft=512, hop_length=160)
     return mfcc.T  # (timesteps, N_MFCC)
 
-# ── VAD mejorado ──────────────────────────────────────────────────────────────
+#  VAD mejorado 
 def tiene_voz(audio):
     rms_total = np.sqrt(np.mean(audio ** 2))
     if 20 * np.log10(rms_total + 1e-10) <= -SILENCIO_DB:
@@ -350,20 +350,20 @@ def tiene_voz(audio):
     total_frames = (len(audio) - frame) // frame
     return frames_con_voz / max(total_frames, 1) >= 0.20
 
-# ── ESP32 ─────────────────────────────────────────────────────────────────────
+#  ESP32 
 def enviar(cmd):
     try:
         return requests.post(ESP32_URL, json={"cmd": cmd}, timeout=1.0).status_code == 200
     except Exception:
         return False
 
-# ── Barra de confianza (terminal) ─────────────────────────────────────────────
+#  Barra de confianza (terminal) 
 def barra(v, w=18):
     n = int(v * w)
     c = VERDE if v >= 0.7 else (AMARILLO if v >= 0.5 else ROJO)
     return c + "█" * n + GRIS + "░" * (w - n) + RESET
 
-# ── Header de terminal ────────────────────────────────────────────────────────
+#  Header de terminal 
 def header(clases):
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{BOLD}{VERDE}")
@@ -377,11 +377,11 @@ def header(clases):
     print(f"  {GRIS}Web   :{RESET} {CYAN}http://localhost:5050{RESET}  "
           f"{GRIS}← abre en el browser{RESET}")
     print()
-    print(f"  {GRIS}{'─'*66}{RESET}")
+    print(f"  {GRIS}{''*66}{RESET}")
     print(f"  {GRIS}{'HORA':8}  {'OYÓ':13} {'CONFIANZA':22} {'LATENCIA':10} {'ACCIÓN'}{RESET}")
-    print(f"  {GRIS}{'─'*66}{RESET}")
+    print(f"  {GRIS}{''*66}{RESET}")
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+#  Main 
 def main():
     # Cargar modelo LSTM
     print(f"\n{BOLD}  Cargando modelo LSTM...{RESET}")
@@ -475,7 +475,7 @@ def main():
                   f"{lat_str}  "
                   f"{accion}                ")
 
-            # ── Detección de comando compuesto (módulo secuencial) ─────────────
+            #  Detección de comando compuesto (módulo secuencial) 
             if conf >= UMBRAL_CONF and clase != "ruido":
                 c1, c2, etiqueta = detectar_compuesto(clase, conf)
                 if c1:
@@ -487,7 +487,7 @@ def main():
                     cmd_enviado = f"{c1}+{c2}"
                     _push("pred", clase=f"[{etiqueta}]", conf=round(conf, 3),
                           cmd=cmd_enviado)
-                    print(f"  {GRIS}{'─'*56}{RESET}")
+                    print(f"  {GRIS}{''*56}{RESET}")
                     continue
 
             _push("pred", clase=clase, conf=round(conf, 3), cmd=cmd_enviado,

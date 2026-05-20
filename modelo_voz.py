@@ -40,6 +40,8 @@ COMANDOS = {
     "ruido":     "IGNORAR",
 }
 
+
+#MFCC 
 def extraer_mfcc(ruta_archivo):
     try:
         audio, sr = librosa.load(ruta_archivo, sr=SAMPLE_RATE, duration=DURATION, mono=True)
@@ -94,6 +96,8 @@ def extraer_con_augmentation(ruta_archivo):
         print(f"  Advertencia augmentation: {e}")
     return features_list
 
+
+#Cargar el dataset: recorrer carpetas, extraer MFCCs, aplicar augmentation, y preparar X,y
 def cargar_dataset():
     X, y = [], []
     print("\n  Cargando dataset...")
