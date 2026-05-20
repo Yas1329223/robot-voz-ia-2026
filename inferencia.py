@@ -1,7 +1,6 @@
 """
 =============================================================
- INFERENCIA EN TIEMPO REAL — PROYECTO FINAL IA 2026
- Universidad Rafael Landívar
+                INFERENCIA EN TIEMPO REAL
 =============================================================
 Captura audio -> clasifica -> manda al ESP32 por WiFi
 Web en tiempo real: http://localhost:5050
@@ -16,6 +15,8 @@ import numpy as np
 import sounddevice as sd
 import librosa
 import joblib
+import torch
+import torch.nn as nn
 import requests
 warnings.filterwarnings('ignore')
 
@@ -36,9 +37,9 @@ ESP32_IP    = "192.168.0.32"
 ESP32_URL   = f"http://{ESP32_IP}/cmd"
 SAMPLE_RATE = 16000
 DURACION    = 1.5    # debe coincidir con modelo_voz.py
-UMBRAL_CONF = 0.50
+UMBRAL_CONF = 0.60
 N_MFCC      = 13
-SILENCIO_DB = 35     # threshold VAD: -35 dB acepta voz normal de micrófono
+SILENCIO_DB = 28     # threshold VAD: -28 dB requiere voz más clara, filtra ruido ambiente
 
 COMANDOS = {
     "adelante":  "RECTA_10S",
@@ -61,6 +62,40 @@ EMOJIS = {
     "curva_der": "↪",
     "ruido":     "~",
 }
+
+# ── Comandos compuestos (Módulo Secuencial LSTM) ───────────────────────────────
+# Detecta secuencias de 2 palabras y ejecuta acción compuesta
+COMPUESTOS = {
+    ("adelante",  "detener"):   ("RECTA_10S",   "STOP",        "AVANZA Y PARA"),
+    ("atras",     "detener"):   ("ATRAS_10S",   "STOP",        "RETROCEDE Y PARA"),
+    ("izquierda", "adelante"):  ("GIRO_90_IZQ", "RECTA_10S",   "GIRA IZQ Y AVANZA"),
+    ("derecha",   "adelante"):  ("GIRO_90_DER", "RECTA_10S",   "GIRA DER Y AVANZA"),
+    ("izquierda", "derecha"):   ("GIRO_90_IZQ", "GIRO_90_DER", "GIRA IZQ Y DER"),
+    ("derecha",   "izquierda"): ("GIRO_90_DER", "GIRO_90_IZQ", "GIRA DER Y IZQ"),
+    ("adelante",  "izquierda"): ("RECTA_10S",   "GIRO_90_IZQ", "AVANZA Y GIRA IZQ"),
+    ("adelante",  "derecha"):   ("RECTA_10S",   "GIRO_90_DER", "AVANZA Y GIRA DER"),
+}
+VENTANA_COMPUESTO = 6.0   # segundos máximos entre dos palabras
+
+_seq_buffer: list = []    # [(clase, timestamp), ...]
+
+def detectar_compuesto(clase, conf):
+    """Registra la clase detectada y verifica si forma un comando compuesto."""
+    ahora = time.time()
+    # Limpiar entradas antiguas
+    while _seq_buffer and (ahora - _seq_buffer[0][1]) > VENTANA_COMPUESTO:
+        _seq_buffer.pop(0)
+    # Solo acumula si la confianza es alta (≥70%) para evitar falsos compuestos
+    if clase and clase != "ruido" and conf >= 0.70:
+        _seq_buffer.append((clase, ahora))
+    # Buscar patrón en las últimas 2 palabras
+    if len(_seq_buffer) >= 2:
+        seq = (_seq_buffer[-2][0], _seq_buffer[-1][0])
+        if seq in COMPUESTOS:
+            cmd1, cmd2, etiqueta = COMPUESTOS[seq]
+            _seq_buffer.clear()
+            return cmd1, cmd2, etiqueta
+    return None, None, None
 
 # ── Cola SSE ──────────────────────────────────────────────────────────────────
 _sse: queue.Queue = queue.Queue(maxsize=60)
@@ -206,10 +241,12 @@ es.onmessage=e=>{
   r.className='row';
   const wc=d.cmd?'ok':d.conf<0.5?'dim':'warn';
   const ac=d.cmd?'ok':'no';
+  const lat=d.lat_ms!=null?d.lat_ms+'ms':'';
   r.innerHTML='<span class="rt">'+d.ts+'</span>'
     +'<span class="em">'+(EM[d.clase]||'')+' </span>'
     +'<span class="wrd '+wc+'">'+d.clase+'</span>'
     +'<span class="pct">'+pct+'%</span>'
+    +'<span class="pct" style="color:#555">'+lat+'</span>'
     +'<span class="act '+ac+'">'+(d.cmd||'&mdash;')+'</span>';
   log.prepend(r);
   if(log.children.length>40)log.removeChild(log.lastChild);
@@ -257,12 +294,35 @@ def _flask_thread():
     except Exception:
         pass
 
+# ── Arquitectura LSTM (debe coincidir con modelo_lstm.py) ────────────────────
+class LSTMVoz(nn.Module):
+    def __init__(self, input_size, hidden1, hidden2, n_clases, dropout=0.3):
+        super().__init__()
+        self.lstm1 = nn.LSTM(input_size, hidden1, batch_first=True)
+        self.drop1 = nn.Dropout(dropout)
+        self.lstm2 = nn.LSTM(hidden1, hidden2, batch_first=True)
+        self.drop2 = nn.Dropout(dropout)
+        self.fc1   = nn.Linear(hidden2, 64)
+        self.relu  = nn.ReLU()
+        self.fc2   = nn.Linear(64, n_clases)
+
+    def forward(self, x):
+        out, _ = self.lstm1(x)
+        out    = self.drop1(out)
+        out, _ = self.lstm2(out)
+        out    = out[:, -1, :]
+        out    = self.drop2(out)
+        return self.fc2(self.relu(self.fc1(out)))
+
 # ── Extraccion de features ────────────────────────────────────────────────────
-def extraer_mfcc(audio):
+def _normalizar_audio(audio):
     if np.max(np.abs(audio)) > 0:
         audio = audio / np.max(np.abs(audio))
-    n     = int(SAMPLE_RATE * DURACION)
-    audio = audio[:n] if len(audio) >= n else np.pad(audio, (0, n - len(audio)))
+    n = int(SAMPLE_RATE * DURACION)
+    return audio[:n] if len(audio) >= n else np.pad(audio, (0, n - len(audio)))
+
+def extraer_mfcc(audio):
+    audio = _normalizar_audio(audio)
     mfcc       = librosa.feature.mfcc(y=audio.astype(float), sr=SAMPLE_RATE,
                                        n_mfcc=N_MFCC, n_fft=512, hop_length=160)
     mfcc_mean  = np.mean(mfcc, axis=1)
@@ -270,10 +330,25 @@ def extraer_mfcc(audio):
     delta_mean = np.mean(librosa.feature.delta(mfcc), axis=1)
     return np.concatenate([mfcc_mean, mfcc_std, delta_mean])
 
-# ── VAD ───────────────────────────────────────────────────────────────────────
+def extraer_mfcc_seq(audio):
+    audio = _normalizar_audio(audio)
+    mfcc = librosa.feature.mfcc(y=audio.astype(float), sr=SAMPLE_RATE,
+                                  n_mfcc=N_MFCC, n_fft=512, hop_length=160)
+    return mfcc.T  # (timesteps, N_MFCC)
+
+# ── VAD mejorado ──────────────────────────────────────────────────────────────
 def tiene_voz(audio):
-    rms = np.sqrt(np.mean(audio ** 2))
-    return 20 * np.log10(rms + 1e-10) > -SILENCIO_DB
+    rms_total = np.sqrt(np.mean(audio ** 2))
+    if 20 * np.log10(rms_total + 1e-10) <= -SILENCIO_DB:
+        return False
+    # Verificar que al menos 20% del audio tenga energía real (evita clicks cortos)
+    frame = int(SAMPLE_RATE * 0.02)
+    frames_con_voz = sum(
+        1 for i in range(0, len(audio) - frame, frame)
+        if np.sqrt(np.mean(audio[i:i+frame]**2)) > 10**(-SILENCIO_DB/20)
+    )
+    total_frames = (len(audio) - frame) // frame
+    return frames_con_voz / max(total_frames, 1) >= 0.20
 
 # ── ESP32 ─────────────────────────────────────────────────────────────────────
 def enviar(cmd):
@@ -293,8 +368,7 @@ def header(clases):
     os.system('cls' if os.name == 'nt' else 'clear')
     print(f"{BOLD}{VERDE}")
     print("  ╔══════════════════════════════════════════════════════╗")
-    print("  ║     🤖  ROBOT VOZ — Proyecto Final IA 2026          ║")
-    print("  ║         Universidad Rafael Landívar                  ║")
+    print("  ║         ROBOT VOZ — Proyecto Final IA                ║")
     print("  ╚══════════════════════════════════════════════════════╝")
     print(f"{RESET}")
     print(f"  {GRIS}ESP32 :{RESET} {CYAN}{ESP32_IP}{RESET}   "
@@ -303,23 +377,26 @@ def header(clases):
     print(f"  {GRIS}Web   :{RESET} {CYAN}http://localhost:5050{RESET}  "
           f"{GRIS}← abre en el browser{RESET}")
     print()
-    print(f"  {GRIS}{'─'*56}{RESET}")
-    print(f"  {GRIS}{'HORA':8}  {'OYÓ':13} {'CONFIANZA':22} {'ACCIÓN'}{RESET}")
-    print(f"  {GRIS}{'─'*56}{RESET}")
+    print(f"  {GRIS}{'─'*66}{RESET}")
+    print(f"  {GRIS}{'HORA':8}  {'OYÓ':13} {'CONFIANZA':22} {'LATENCIA':10} {'ACCIÓN'}{RESET}")
+    print(f"  {GRIS}{'─'*66}{RESET}")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    # Cargar modelo
-    print(f"\n{BOLD}  Cargando modelo...{RESET}")
+    # Cargar modelo LSTM
+    print(f"\n{BOLD}  Cargando modelo LSTM...{RESET}")
     try:
-        modelo  = joblib.load("modelo_voz.pkl")
-        scaler  = joblib.load("scaler_voz.pkl")
-        encoder = joblib.load("encoder_voz.pkl")
+        scaler  = joblib.load("scaler_lstm.pkl")
+        encoder = joblib.load("encoder_lstm.pkl")
         clases  = list(encoder.classes_)
-        print(f"  {VERDE}✓{RESET} Modelo listo — {len(clases)} clases: "
+        n_cls   = len(clases)
+        lstm_model = LSTMVoz(N_MFCC, 128, 64, n_cls)
+        lstm_model.load_state_dict(torch.load("modelo_lstm.pt", weights_only=True))
+        lstm_model.eval()
+        print(f"  {VERDE}✓{RESET} LSTM listo (98.6%) — {n_cls} clases: "
               f"{CYAN}{', '.join(clases)}{RESET}")
     except FileNotFoundError:
-        print(f"  {ROJO}✗ No se encontro modelo_voz.pkl — ejecute primero: python modelo_voz.py{RESET}")
+        print(f"  {ROJO}✗ No se encontro modelo_lstm.pt — ejecute primero: python modelo_lstm.py{RESET}")
         sys.exit(1)
 
     # Verificar ESP32
@@ -352,10 +429,14 @@ def main():
                       end="\r")
                 continue
 
-            feat      = extraer_mfcc(audio)
-            fs        = scaler.transform([feat])
-            pred      = modelo.predict(fs)[0]
-            probas    = modelo.predict_proba(fs)[0]
+            t_inicio  = time.perf_counter()
+            seq       = extraer_mfcc_seq(audio)
+            seq_norm  = scaler.transform(seq)
+            xt        = torch.tensor(seq_norm[np.newaxis], dtype=torch.float32)
+            with torch.no_grad():
+                logits = lstm_model(xt)[0]
+                probas = torch.softmax(logits, dim=0).numpy()
+            pred      = int(probas.argmax())
             conf      = float(probas.max())
             clase     = encoder.inverse_transform([pred])[0]
             emoji     = EMOJIS.get(clase, "")
@@ -384,12 +465,33 @@ def main():
                     accion      = f"{ROJO}✗ ESP32 sin respuesta{RESET}"
                     color_clase = ROJO
 
+            t_ms = (time.perf_counter() - t_inicio) * 1000
+            lat_color = VERDE if t_ms < 150 else (AMARILLO if t_ms < 300 else ROJO)
+            lat_str = f"{lat_color}{t_ms:5.0f}ms{RESET}"
+
             print(f"\r  {GRIS}{time.strftime('%H:%M:%S')}{RESET}  "
                   f"{color_clase}{emoji} {clase:11}{RESET}  "
                   f"{barra(conf)} {int(conf*100):3}%  "
+                  f"{lat_str}  "
                   f"{accion}                ")
 
-            _push("pred", clase=clase, conf=round(conf, 3), cmd=cmd_enviado)
+            # ── Detección de comando compuesto (módulo secuencial) ─────────────
+            if conf >= UMBRAL_CONF and clase != "ruido":
+                c1, c2, etiqueta = detectar_compuesto(clase, conf)
+                if c1:
+                    print(f"\n  {BOLD}{AMARILLO}⚡ COMANDO COMPUESTO: {etiqueta}{RESET}")
+                    print(f"     Ejecutando: {CYAN}{c1}{RESET} → {CYAN}{c2}{RESET}")
+                    enviar(c1)
+                    time.sleep(2.0)
+                    enviar(c2)
+                    cmd_enviado = f"{c1}+{c2}"
+                    _push("pred", clase=f"[{etiqueta}]", conf=round(conf, 3),
+                          cmd=cmd_enviado)
+                    print(f"  {GRIS}{'─'*56}{RESET}")
+                    continue
+
+            _push("pred", clase=clase, conf=round(conf, 3), cmd=cmd_enviado,
+                  lat_ms=round(t_ms))
 
         except KeyboardInterrupt:
             print(f"\n\n  {AMARILLO}Deteniendo...{RESET}")
