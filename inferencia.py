@@ -4,10 +4,6 @@
 =============================================================
 Captura audio -> clasifica -> manda al ESP32 por WiFi
 Web en tiempo real: http://localhost:5050
-
-USO:
-  pip install flask
-  python inferencia.py
 """
 
 import os, sys, time, warnings, threading, queue, json
@@ -36,10 +32,10 @@ RESET    = "\033[0m"
 ESP32_IP    = "192.168.0.32"
 ESP32_URL   = f"http://{ESP32_IP}/cmd"
 SAMPLE_RATE = 16000
-DURACION    = 1.5    # debe coincidir con modelo_voz.py
+DURACION    = 1.5    
 UMBRAL_CONF = 0.60
 N_MFCC      = 13
-SILENCIO_DB = 28     # threshold VAD: -28 dB requiere voz más clara, filtra ruido ambiente
+SILENCIO_DB = 28     # audio silencio, ignora
 
 COMANDOS = {
     "adelante":  "RECTA_10S",
@@ -336,7 +332,7 @@ def extraer_mfcc_seq(audio):
                                   n_mfcc=N_MFCC, n_fft=512, hop_length=160)
     return mfcc.T  # (timesteps, N_MFCC)
 
-#  VAD mejorado 
+#  VAD (si esta mucho tiempo callado ignora)
 def tiene_voz(audio):
     rms_total = np.sqrt(np.mean(audio ** 2))
     if 20 * np.log10(rms_total + 1e-10) <= -SILENCIO_DB:
@@ -348,7 +344,7 @@ def tiene_voz(audio):
         if np.sqrt(np.mean(audio[i:i+frame]**2)) > 10**(-SILENCIO_DB/20)
     )
     total_frames = (len(audio) - frame) // frame
-    return frames_con_voz / max(total_frames, 1) >= 0.20
+    return frames_con_voz / max(total_frames, 1) >= 0.05
 
 #  ESP32 
 def enviar(cmd):
@@ -417,6 +413,7 @@ def main():
     ultimo_tiempo = 0
     COOLDOWN      = 0.8
 
+# Loop principal de captura y clasificación
     while True:
         try:
             audio = sd.rec(int(DURACION * SAMPLE_RATE), samplerate=SAMPLE_RATE,
