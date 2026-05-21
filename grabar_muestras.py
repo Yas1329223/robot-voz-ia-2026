@@ -22,7 +22,7 @@ RESET    = "\033[0m"
 
 SAMPLE_RATE  = 16000
 DURACION     = 1.5
-DURACION_CURVA = 2.0
+DURACION_CURVA = 3.5
 DATASET_DIR  = "dataset"
 N_POR_SESION = 30
 
@@ -37,6 +37,7 @@ CLASES = {
     "ruido":     "Haz ruido, golpea la mesa, habla cualquier cosa, o queda en silencio",
 }
 
+# Funciones auxiliares 
 def contar(clase):
     carpeta = os.path.join(DATASET_DIR, clase)
     if not os.path.isdir(carpeta):
@@ -44,6 +45,7 @@ def contar(clase):
     return len([f for f in os.listdir(carpeta)
                 if f.lower().endswith(('.wav','.ogg','.mp3','.m4a','.flac'))])
 
+# Detección de voz básica 
 def tiene_voz(audio):
     rms = np.sqrt(np.mean(audio ** 2))
     return 20 * np.log10(rms + 1e-10) > -35
